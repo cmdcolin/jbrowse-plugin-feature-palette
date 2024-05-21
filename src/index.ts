@@ -4,6 +4,7 @@ import { addDisposer, getSnapshot, types } from 'mobx-state-tree'
 import { version } from '../package.json'
 import {
   AnyConfigurationSchemaType,
+  ConfigurationReference,
   ConfigurationSchema,
   getConf,
 } from '@jbrowse/core/configuration'
@@ -20,19 +21,12 @@ import { LinearGenomeViewModel } from '@jbrowse/plugin-linear-genome-view'
 import { getPalette } from './palette'
 
 function configSchemaF(pluginManager: PluginManager) {
-  const LGVPlugins = pluginManager.getPlugin(
-    'LinearGenomeViewPlugin',
-  ) as import('@jbrowse/plugin-linear-genome-view').default
-  const {
-    // @ts-expect-error
-    linearBasicDisplayConfigSchemaFactory,
-  } = LGVPlugins.exports
-  const base = linearBasicDisplayConfigSchemaFactory(pluginManager)
+  const { configSchema } = pluginManager.getDisplayType('LinearBasicDisplay')
   return ConfigurationSchema(
     'ColorizeDisplay',
     {},
     {
-      baseConfiguration: base,
+      baseConfiguration: configSchema,
     },
   )
 }
@@ -41,18 +35,13 @@ function stateModelF(
   pluginManager: PluginManager,
   configSchema: AnyConfigurationSchemaType,
 ) {
-  const LGVPlugins = pluginManager.getPlugin(
-    'LinearGenomeViewPlugin',
-  ) as import('@jbrowse/plugin-linear-genome-view').default
-  const {
-    // @ts-expect-error
-    linearBasicDisplayModelFactory,
-  } = LGVPlugins.exports
+  const { stateModel } = pluginManager.getDisplayType('LinearBasicDisplay')
   return types
     .compose(
-      linearBasicDisplayModelFactory(configSchema),
+      stateModel as any,
       types.model('ColorizeDisplay', {
         type: 'ColorizeDisplay',
+        configuration: ConfigurationReference(configSchema),
       }),
     )
     .volatile(() => ({
@@ -60,7 +49,6 @@ function stateModelF(
     }))
     .actions(self => ({
       setFeats(f: any) {
-        console.log({ f })
         self.feats = f
       },
     }))
@@ -70,7 +58,6 @@ function stateModelF(
           self,
           autorun(async () => {
             try {
-              console.log('wtf')
               const view = getContainingView(self) as LinearGenomeViewModel
               if (!view.initialized) {
                 return
@@ -85,7 +72,7 @@ function stateModelF(
                 {
                   adapterConfig,
                   sessionId,
-                  regions: view.coarseDynamicBlocks,
+                  regions: view.staticBlocks.contentBlocks,
                 },
               )
               self.setFeats(feats)
@@ -137,19 +124,16 @@ export default class ColorizePlugin extends Plugin {
 
   install(pluginManager: PluginManager) {
     pluginManager.addDisplayType(() => {
-      console.log('wtf0')
-      const LGVPlugins = pluginManager.getPlugin(
-        'LinearGenomeViewPlugin',
-      ) as import('@jbrowse/plugin-linear-genome-view').default
-      const { BaseLinearDisplayComponent } = LGVPlugins.exports
+      const { ReactComponent } =
+        pluginManager.getDisplayType('LinearBasicDisplay')
       const configSchema = configSchemaF(pluginManager)
       return new DisplayType({
         name: 'ColorizeDisplay',
         trackType: 'FeatureTrack',
         viewType: 'LinearGenomeView',
         configSchema,
-        ReactComponent: BaseLinearDisplayComponent,
         stateModel: stateModelF(pluginManager, configSchema),
+        ReactComponent,
       })
     })
   }
